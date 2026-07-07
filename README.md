@@ -5,3 +5,16 @@
 ```luau
 local Reify  = loadstring(game:HttpGet('https://raw.githubusercontent.com/malice-nz/Reify/main/main.luau'))':3';
 ```
+
+## Examples
+```luau
+--# Library #--
+local Module  = Reify.Load('Module.rbxm');
+local Library = Reify.Require(Module);
+
+Library.DoSomething();
+
+--# GUI #--
+local MainGui  = Reify.Load('GUI.rbxm');
+MainGui.Parent  = LocalPlayer.PlayerGui
+```
