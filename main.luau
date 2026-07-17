@@ -11,6 +11,7 @@ local Reify	= {}
 local getgenv	= getgenv or function() return {} end;
 local cloneref	= cloneref or function(v) return v end;
 local readfile	= readfile;
+local setthreadidentity	= setthreadidentity or function() end;
 
 --# Splash Logo #--
 local RealConsole	= loadstring(game:HttpGet('https://raw.githubusercontent.com/malice-nz/RealConsole/main/main.luau'))':3';
@@ -443,7 +444,9 @@ function RunModule(Module)
 
 	RequireCache[Module]	= false;
 
+	setthreadidentity(8)
 	local Loader, Error = loadstring('return function(script, require, ...)\n' .. Source .. '\nend', '=' .. Module.Name);
+	setthreadidentity(2)
 
 	if(not Loader) then return(RealConsole:Error(`'{Module.Name}':{Error}`, MonoFont)) end;
 
