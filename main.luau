@@ -11,10 +11,21 @@ local Reify	= {}
 local getgenv	= getgenv or function() return {} end;
 local cloneref	= cloneref or function(v) return v end;
 local readfile	= readfile;
-local setthreadidentity	= setthreadidentity or function() end;
+
+--# Thread Identity #--
+local setthreadidentity	= setthreadidentity or setidentity or setthreadcontext;
+local getthreadidentity	= getthreadidentity or getidentity or getthreadcontext;
+
+local ScriptIdentity	= 8;
+local function GetThreadIdentity()
+	return (getthreadidentity and getthreadidentity()) or 2;
+end;
+local function SetThreadIdentity(Id)
+	if(setthreadidentity) then setthreadidentity(Id) end;
+end;
 
 --# Splash Logo #--
-local RealConsole	= loadstring(game:HttpGet('https://raw.githubusercontent.com/malice-nz/RealConsole/main/main.luau'))':3';
+local RealConsole	= loadstring(game:HttpGet('https://raw.githubusercontent.com/malice-nz/RealConsole/main/main.lua'))':3';
 local MonoFont		= Font.new('rbxasset://fonts/families/RobotoMono.json');
 do
 	if(not(getgenv()['____REIFY_SPLASH'])) then
@@ -82,7 +93,7 @@ local Lz4Decompress		= lz4decompress or (crypt and crypt.lz4decompress) or funct
 		local MatchLen = bit32.band(Token, 15)
 		if MatchLen == 15 then
 			while true do
-				local B = buffer.readu8(In, IPosition); IPos += 1
+				local B = buffer.readu8(In, IPosition); IPosition += 1
 				MatchLen += B
 				if B ~= 255 then break end
 			end
@@ -91,7 +102,7 @@ local Lz4Decompress		= lz4decompress or (crypt and crypt.lz4decompress) or funct
 		local MatchPos = OPosition - Offset
 		for _ = 1, MatchLen do
 			buffer.writeu8(Out, OPosition, buffer.readu8(Out, MatchPos))
-			OPos += 1; MatchPos += 1
+			OPosition += 1; MatchPos += 1
 		end;
 	end;
 
@@ -353,14 +364,17 @@ local function Realise(Node, Parent)
 end;
 
 --# Load #--
-local function Resolve(Data)
+type Path	= string;
+type Binary	= string;
+
+local function Resolve(Data: Path | Binary)
 	if(type(Data) ~= 'string') then return(RealConsole:Error('Expected a file path or data string!', MonoFont)) end
 	if(Data:sub(1, 7) == '<roblox') then return Data end
 	if(not readfile) then return(RealConsole:Error('Your executor doesnt support readfile, sorry!', MonoFont)) end
 	return readfile(Data)
 end;
 
-function Reify.Load(Data)
+function Reify.Load(Data: Path | Binary)
 	local Data	= Resolve(Data);
 	local Roots;
 
@@ -385,7 +399,7 @@ end;
 
 
 --# Module Building #--
-local function IsModule(Inst) return(typeof(Inst) == 'Instance' and Inst:IsA('ModuleScript')) end;
+local function IsModule(Instance) return(typeof(Instance) == 'Instance' and Instance:IsA('ModuleScript')) end;
 local function FindModule(Root)
 	if(IsModule(Root)) then return(Root) end;
 	local ContainerName	= Root.Name:lower();
@@ -443,24 +457,32 @@ function RunModule(Module)
 	end;
 
 	RequireCache[Module]	= false;
+	local PreviousIdentity	= GetThreadIdentity();
+	SetThreadIdentity(ScriptIdentity);
 
-	setthreadidentity(8)
-	local Loader, Error = loadstring('setthreadidentity(8) return function(script, require, ...)\n' .. Source .. '\nend', '=' .. Module.Name);
-	setthreadidentity(2)
+	local Loader, Error = loadstring('return function(script, require, ...)\n' .. Source .. '\nend', '=' .. Module.Name);
+	if(not Loader) then
+		SetThreadIdentity(PreviousIdentity);
+		return(RealConsole:Error(`'{Module.Name}':{Error}`, MonoFont));
+	end;
 
-	if(not Loader) then return(RealConsole:Error(`'{Module.Name}':{Error}`, MonoFont)) end;
+	local Ran, Result	= pcall(Loader(), Module, BuildRequire(Module));
+	SetThreadIdentity(PreviousIdentity);
 
-	local Result			= Loader()(Module, BuildRequire(Module));
+	if(not Ran) then
+		RequireCache[Module]	= nil;
+		return(RealConsole:Error(`'{Module.Name}':{Result}`, MonoFont));
+	end;
+
 	RequireCache[Module]	= Result;
-
 	return(Result);
 end;
 
-function Reify.Require(Inst)
-	if(typeof(Inst) ~= 'Instance') then return(RealConsole:Error('Expected Reify Instance')) end;
-	local Module	= FindModule(Inst);
-	if(not Module) then return(RealConsole:Error('No ModuleScript found in ' .. Inst:GetFullName())) end;
+function Reify.Require(Instance)
+	if(typeof(Instance) ~= 'Instance') then return(RealConsole:Error('Expected Reify Instance')) end;
+	local Module	= FindModule(Instance);
+	if(not Module) then return(RealConsole:Error('No ModuleScript found in ' .. Instance:GetFullName())) end;
 	return(RunModule(Module));
 end;
 
-return(Reify)
+return Reify
