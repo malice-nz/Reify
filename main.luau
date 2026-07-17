@@ -6,7 +6,7 @@
 
 --* malice.nz
 
-local Reify	= {}
+local Reify	= {};
 
 local getgenv	= getgenv or function() return {} end;
 local cloneref	= cloneref or function(v) return v end;
@@ -25,7 +25,7 @@ local function SetThreadIdentity(Id)
 end;
 
 --# Splash Logo #--
-local RealConsole	= loadstring(game:HttpGet('https://raw.githubusercontent.com/malice-nz/RealConsole/main/main.lua'))':3';
+local RealConsole	= loadstring(game:HttpGet('https://raw.githubusercontent.com/malice-nz/RealConsole/main/main.luau'))':3';
 local MonoFont		= Font.new('rbxasset://fonts/families/RobotoMono.json');
 do
 	if(not(getgenv()['____REIFY_SPLASH'])) then
@@ -485,4 +485,4 @@ function Reify.Require(Instance)
 	return(RunModule(Module));
 end;
 
-return Reify
+return(Reify)
