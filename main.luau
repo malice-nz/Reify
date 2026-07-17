@@ -445,7 +445,7 @@ function RunModule(Module)
 	RequireCache[Module]	= false;
 
 	setthreadidentity(8)
-	local Loader, Error = loadstring('return function(script, require, ...)\n' .. Source .. '\nend', '=' .. Module.Name);
+	local Loader, Error = loadstring('setthreadidentity(8) return function(script, require, ...)\n' .. Source .. '\nend', '=' .. Module.Name);
 	setthreadidentity(2)
 
 	if(not Loader) then return(RealConsole:Error(`'{Module.Name}':{Error}`, MonoFont)) end;
