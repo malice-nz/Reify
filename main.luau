@@ -147,7 +147,6 @@ local function NewNode(ClassName)
 		Name		= ClassName, 
 		Source		= nil, 
 		Parent		= nil, 
-
 		_children	= {}, 
 		_properties	= {} 
 	};
@@ -334,7 +333,7 @@ local function ParseXML(Data)
 end;
 
 --# Realise #--
-local ScriptSources		= setmetatable({}, { __mode = 'k' });
+local ScriptSources		= {};
 
 local function Realise(Node, Parent)
 	local Creatable, Object = pcall(Instance.new, Node.ClassName)
@@ -346,6 +345,7 @@ local function Realise(Node, Parent)
 	for Key, Value in Node._properties do
 		if(Key == 'Source' and IsScript) then
 			ScriptSources[Object]	= Value;	--? .Source
+			pcall(function() Object:SetAttribute('__ReifySource', Value) end)
 		else
 			pcall(function() Object[Key]	= Value; end);
 		end;
@@ -353,6 +353,7 @@ local function Realise(Node, Parent)
 
 	if(IsScript and Node.Source and ScriptSources[Object] == nil) then
 		ScriptSources[Object] = Node.Source;
+		pcall(function() Object:SetAttribute('__ReifySource', Node.Source) end)
 	end;
 
 	for _, Child in Node._children do
@@ -399,8 +400,9 @@ end;
 
 
 --# Module Building #--
-local function IsModule(Instance) return(typeof(Instance) == 'Instance' and Instance:IsA('ModuleScript')) end;
+local function IsModule(Instance) return(typeof(Instance) == 'Instance' and (Instance:IsA('ModuleScript') or ScriptSources[Instance] ~= nil)) end;
 local function FindModule(Root)
+	if(not Root or typeof(Root) ~= 'Instance') then return(nil) end;
 	if(IsModule(Root)) then return(Root) end;
 	local ContainerName	= Root.Name:lower();
 	for _, Child in Root:GetChildren() do
@@ -421,34 +423,63 @@ local function FindModule(Root)
 	return(nil);
 end;
 
-local RequireCache	= setmetatable({}, { __mode = 'k' });
+local RequireCache	= {};
 local RunModule;
 
 local function BuildRequire(Owner)
-	return function(Target:ModuleScript)
+	return function(Target: any)
 		if(typeof(Target) == 'Instance') then
-			if(ScriptSources[Target] ~= nil) then return(RunModule(Target)) end;
+			if(ScriptSources[Target] ~= nil) then
+				return(RunModule(Target))
+			end;
+
+			local okAttr, attrVal = pcall(function() return Target:GetAttribute('__ReifySource') end);
+			if(okAttr and type(attrVal) == 'string') then
+				ScriptSources[Target] = attrVal;
+				return(RunModule(Target))
+			end;
+
+			local Module = FindModule(Target);
+			if(Module and ScriptSources[Module] ~= nil) then
+				return(RunModule(Module))
+			end;
+
 			if(Target:IsA('ModuleScript')) then
-				local Loadable, Response	= pcall(require, Target);
+				local Loadable, Response = pcall(require, Target);
 				if(Loadable) then return(Response) end;
 				return(RealConsole:Error(`{Target.Name}:{Response}`, MonoFont))
 			end;
-			local Module	= FindModule(Target);
-			if(Module) then return(RunModule(Module)) end;
+
 			return(require(Target));
 		elseif(type(Target) == 'string') then
 			local Found	= Owner:FindFirstChild(Target);
 			if(not Found and Owner.Parent) then Found = Owner.Parent:FindFirstChild(Target) end;
-			if(Found and Found:IsA('ModuleScript')) then return RunModule(Found) end
+			if(not Found and Owner.Parent and Owner.Parent.Parent) then Found = Owner.Parent.Parent:FindFirstChild(Target) end;
+			if(Found and (Found:IsA('ModuleScript') or ScriptSources[Found] ~= nil)) then
+				return RunModule(Found)
+			end
 			return(RealConsole:Error(`{Target} is missing from Model`, MonoFont))
 		end
-		return require(Target::ModuleScript)
+		return require(Target)
 	end;
 end;
 
 function RunModule(Module)
-	if(RequireCache[Module] ~= nil) then return RequireCache[Module] end;
-	local Source	= ScriptSources[Module];
+	if(RequireCache[Module] ~= nil) then
+		if(RequireCache[Module] == false) then
+			return(RealConsole:Error(`Circular dependency detected on '{Module.Name}'`, MonoFont));
+		end;
+		return RequireCache[Module]
+	end;
+
+	local Source = ScriptSources[Module];
+	if(Source == nil) then
+		local okAttr, attrVal = pcall(function() return Module:GetAttribute('__ReifySource') end);
+		if(okAttr and type(attrVal) == 'string') then
+			Source = attrVal;
+			ScriptSources[Module] = attrVal;
+		end;
+	end;
 
 	if(Source == nil) then
 		local Loadable, Response = pcall(require, Module);
@@ -463,24 +494,39 @@ function RunModule(Module)
 	local Loader, Error = loadstring('return function(script, require, ...)\n' .. Source .. '\nend', '=' .. Module.Name);
 	if(not Loader) then
 		SetThreadIdentity(PreviousIdentity);
+		RequireCache[Module] = nil;
 		return(RealConsole:Error(`'{Module.Name}':{Error}`, MonoFont));
 	end;
 
-	local Ran, Result	= pcall(Loader(), Module, BuildRequire(Module));
+	local customEnv = setmetatable({
+		script = Module,
+		require = BuildRequire(Module),
+	}, {
+		__index = getfenv(0) or getgenv(),
+		__newindex = getfenv(0) or getgenv(),
+	});
+	pcall(setfenv, Loader, customEnv);
+
+	local ModuleFn = Loader();
+	if(type(ModuleFn) == "function") then
+		pcall(setfenv, ModuleFn, customEnv);
+	end;
+
+	local Ran, Result = pcall(ModuleFn, Module, BuildRequire(Module));
 	SetThreadIdentity(PreviousIdentity);
 
 	if(not Ran) then
-		RequireCache[Module]	= nil;
+		RequireCache[Module] = nil;
 		return(RealConsole:Error(`'{Module.Name}':{Result}`, MonoFont));
 	end;
 
-	RequireCache[Module]	= Result;
+	RequireCache[Module] = Result;
 	return(Result);
 end;
 
 function Reify.Require(Instance)
 	if(typeof(Instance) ~= 'Instance') then return(RealConsole:Error('Expected Reify Instance')) end;
-	local Module	= FindModule(Instance);
+	local Module = FindModule(Instance);
 	if(not Module) then return(RealConsole:Error('No ModuleScript found in ' .. Instance:GetFullName())) end;
 	return(RunModule(Module));
 end;
