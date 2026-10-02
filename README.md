@@ -6,8 +6,6 @@
 local Reify  = loadstring(game:HttpGet('https://raw.githubusercontent.com/malice-nz/Reify/main/main.luau'))':3';
 ```
 
-## What it is
-
 Reify takes a `.rbxm` or `.rbxmx` file and rebuilds it as real Roblox instances inside your executor, then lets you run the scripts inside it.
 
 ## Examples
